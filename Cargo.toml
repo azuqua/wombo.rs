@@ -2,7 +2,7 @@
 authors = ["Alec Embke <aembke@gmail.com>"]
 description = "Utilities for managing event loop threads."
 homepage = "https://github.com/azuqua/wombo.rs"
-keywords = ["event loop", "thread", "tokio", "futures", "cancel"]
+keywords = ["thread", "tokio", "futures", "cancel", "utilities"]
 license = "MIT"
 name = "wombo"
 readme = "README.md"
