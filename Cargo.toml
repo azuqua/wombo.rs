@@ -1,0 +1,12 @@
+[package]
+authors = ["Alec Embke <aembke@gmail.com>"]
+name = "wombo"
+version = "0.1.0"
+
+[dependencies]
+futures = "0.1.17"
+log = "0.4.1"
+parking_lot = "0.5.3"
+pretty_env_logger = "0.1.1"
+thread-id = "3.2.0"
+tokio-core = "0.1.12"
