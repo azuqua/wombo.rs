@@ -16,7 +16,15 @@ With [cargo edit](https://github.com/killercup/cargo-edit).
 cargo add wombo
 ```
 
+## Features
+
+* Less boilerplate spawning event loop threads.
+* Cancel event loops, with the ability to clean up resources on the event loop first.
+* Receive notifications when event loop threads exit, with arbitrary data.
+
 ## Usage
+
+Spawn an event loop thread that waits for a second, and conditionally interrupt it after 50 ms, returning some data to the main thread.
 
 ```rust
 
