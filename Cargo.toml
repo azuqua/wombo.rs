@@ -2,6 +2,22 @@
 authors = ["Alec Embke <aembke@gmail.com>"]
 name = "wombo"
 version = "0.1.0"
+description = "Utilities for managing event loop threads."
+readme = "README.md"
+repository = "https://github.com/azuqua/wombo.rs"
+homepage = "https://github.com/azuqua/wombo.rs"
+keywords = ["event loop", "thread", "tokio", "futures", "cancel"]
+license = "MIT"
+
+[badges]
+travis-ci = { repository = "azuqua/wombo.rs", branch = "master" }
+maintenance = { status = "actively-developed" }
+
+[lib]
+doc = true
+doctest = false
+name = "wombo"
+test = true
 
 [dependencies]
 futures = "0.1.17"
@@ -10,3 +26,6 @@ parking_lot = "0.5.3"
 pretty_env_logger = "0.1.1"
 thread-id = "3.2.0"
 tokio-core = "0.1.12"
+
+[dev-dependencies]
+tokio-timer = "0.1.2"

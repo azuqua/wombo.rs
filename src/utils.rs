@@ -152,3 +152,74 @@ pub fn take_exit_tx<T: Send + 'static>(exit_tx: &Arc<RwLock<Option<ExitSender<T>
   let mut exit_tx_guard = exit_tx.write();
   exit_tx_guard.deref_mut().take()
 }
+
+#[cfg(test)]
+mod tests {
+  #![allow(unused_imports)]
+
+  use tokio_core::reactor::{
+    Core,
+    Handle
+  };
+  use futures::lazy;
+
+  use super::*;
+  use tokio_timer::Timer;
+  use std::time::Duration;
+
+  fn fake_callback_ft<T: 'static>(result: T) -> Box<Future<Item=T, Error=()>> {
+    Box::new(future::ok::<T, ()>(result))
+  }
+
+  #[test]
+  fn should_interrupt_timer_without_callback() {
+    let mut core = Core::new().unwrap();
+    let callbacks = Arc::new(RwLock::new(None));
+    let timer = Timer::default();
+    let sleep_dur = Duration::from_millis(10000);
+    let int_dur = Duration::from_millis(100);
+
+    let timer_ft = Box::new(timer.sleep(sleep_dur)
+      .map_err(|_| ())
+      .map(|_| 1));
+    let (interrupt_tx, test_ft) = interruptible_future(timer_ft, callbacks);
+
+    let interrupt_ft = timer.sleep(int_dur).map_err(|_| ()).and_then(move |_| {
+      let _ = interrupt_tx.unbounded_send(true);
+      Ok::<_, ()>(())
+    });
+
+    match core.run(test_ft.join(interrupt_ft)) {
+      Ok((val, _)) => assert_eq!(val, None),
+      Err(e) => panic!("Error: {:?}", e)
+    }
+  }
+
+  #[test]
+  fn should_interrupt_timer_with_callback() {
+    let mut core = Core::new().unwrap();
+
+    let callback_ft = fake_callback_ft(2);
+    let callbacks = Arc::new(RwLock::new(Some(callback_ft)));
+    let timer = Timer::default();
+    let sleep_dur = Duration::from_millis(10000);
+    let int_dur = Duration::from_millis(100);
+
+    let timer_ft = Box::new(timer.sleep(sleep_dur)
+      .map_err(|_| ())
+      .map(|_| 1));
+
+    let (interrupt_tx, test_ft) = interruptible_future(timer_ft, callbacks);
+
+    let interrupt_ft = timer.sleep(int_dur).map_err(|_| ()).and_then(move |_| {
+      let _ = interrupt_tx.unbounded_send(true);
+      Ok::<_, ()>(())
+    });
+
+    match core.run(test_ft.join(interrupt_ft)) {
+      Ok((val, _)) => assert_eq!(val, Some(2)),
+      Err(e) => panic!("Error: {:?}", e)
+    }
+  }
+
+}

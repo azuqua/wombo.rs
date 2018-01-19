@@ -1,0 +1,40 @@
+language: rust
+sudo: false
+matrix:
+  fast_finish: true
+  include:
+  - rust: nightly
+    env: FEATURES="--features nightly"
+  - rust: stable
+addons:
+  apt:
+    packages:
+    - binutils-dev
+    - build-essential
+cache:
+  apt: true
+  directories:
+  - target/debug/deps
+  - target/debug/build
+notifications:
+  email:
+    on_success: never
+    on_failure: never
+branches:
+  only:
+  - master
+  - develop
+script:
+- |
+  cargo build &&
+  cargo test &&
+  cargo build --release &&
+  cargo test --release
+before_script:
+- |
+  pip install 'travis-cargo<0.2' --user &&
+  export PATH=$HOME/.local/bin:$PATH
+env:
+  global:
+  - RUST_BACKTRACE=1
+  - TRAVIS_CARGO_NIGHTLY_FEATURE=""

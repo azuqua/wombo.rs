@@ -5,6 +5,9 @@ extern crate tokio_core;
 extern crate thread_id;
 extern crate parking_lot;
 
+#[cfg(test)]
+extern crate tokio_timer;
+
 #[macro_use]
 extern crate log;
 extern crate pretty_env_logger;
@@ -233,6 +236,19 @@ impl<T: Send + 'static> Wombo<T> {
 
 #[cfg(test)]
 mod tests {
+  #![allow(unused_imports)]
+
+  use tokio_core::reactor::{
+    Core,
+    Handle
+  };
+
+  use super::*;
+  use tokio_timer::Timer;
+  use std::time::Duration;
+
+
+
 
 
 
