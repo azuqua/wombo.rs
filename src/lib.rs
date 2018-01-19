@@ -1,4 +1,80 @@
-
+//! # Wombo
+//!
+//! Utilities for managing event loop threads.
+//!
+//! ## Usage
+//!
+//! ```rust
+//!
+//! extern crate futures;
+//! extern crate wombo;
+//! extern crate tokio_timer;
+//!
+//! use futures::Future;
+//! use tokio_timer::Timer;
+//!
+//! use std::thread;
+//! use std::time::Duration;
+//!
+//! use wombo::*;
+//!
+//! const SHOULD_INTERRUPT: bool = true;
+//!
+//! fn main() {
+//!   // expected value when not interrupted
+//!   let foo = 1;
+//!   // expected value when interrupted
+//!   let bar = 2;
+//!
+//!   let timer = Timer::default();
+//!   let sleep_dur = Duration::from_millis(50);
+//!
+//!   let wombo = Wombo::new();
+//!   let options = ThreadOptions::new("loop-1", None);
+//!
+//!   let spawn_result = wombo.spawn(options, move |handle, hooks| {
+//!     // sleep for a second, then return foo, or if canceled return bar
+//!     let dur = Duration::from_millis(1000);
+//!
+//!     hooks.on_cancel(move || Ok(bar));
+//!
+//!     timer.sleep(dur)
+//!       .map_err(|_| ())
+//!       .and_then(move |_| Ok(foo))
+//!   });
+//!
+//!   if let Err(e) = spawn_result {
+//!     panic!("Error spawning event loop thread: {:?}", e);
+//!   }
+//!
+//!   // give the child thread a chance to initialize
+//!   thread::sleep(sleep_dur);
+//!
+//!   assert!(wombo.is_running());
+//!   println!("Wombo {} running thread {:?}", wombo.id(), wombo.core_thread_id());
+//!
+//!   if SHOULD_INTERRUPT {
+//!     if let Err(e) = wombo.cancel() {
+//!       panic!("Error canceling: {:?}", e);
+//!     }
+//!   }
+//!
+//!   let result = match wombo.on_exit() {
+//!     Ok(rx) => rx.wait().unwrap(),
+//!     Err(e) => panic!("Error calling on_exit: {:?}", e)
+//!   };
+//!
+//!   if SHOULD_INTERRUPT {
+//!     assert_eq!(result, Some(bar));
+//!   }else{
+//!     assert_eq!(result, Some(foo));
+//!   }
+//! }
+//!
+//! ```
+//!
+//! See [examples](https://github.com/azuqua/wombo.rs/blob/master/examples/README.md) for more.
+//!
 
 extern crate futures;
 extern crate tokio_core;
@@ -20,6 +96,11 @@ pub use error::*;
 mod utils;
 
 use std::fmt;
+
+use std::hash::{
+  Hash,
+  Hasher
+};
 
 use futures::{
   Future,
@@ -54,10 +135,12 @@ use utils::{
 #[doc(hidden)]
 pub type CancelHookFt<T: Send + 'static> = Box<Future<Item=T, Error=()>>;
 
-/// Options when `spawn`ing an event loop thread.
+/// Options when spawning an event loop thread.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ThreadOptions {
+  /// The name of the child thread.
   pub name: String,
+  /// The stack size, in bytes, for the child thread.
   pub stack_size: Option<usize>
 }
 
@@ -73,6 +156,7 @@ impl ThreadOptions {
 }
 
 
+/// A struct for receiving notifications when the event loop is canceled.
 pub struct Hooks<T: Send + 'static>  {
   /// A function that runs when the event loop is canceled via the `cancel` function, but before it is interrupted.
   on_cancel: Arc<RwLock<Option<CancelHookFt<T>>>>
@@ -95,7 +179,10 @@ impl<T: Send + 'static> Hooks<T> {
   }
 
   /// Register a function to be called on the event loop when `cancel` is called.
-  pub fn on_cancel<Fut: IntoFuture<Item=T, Error=()> + 'static, F: FnOnce() -> Fut + 'static>(&self, func: F) {
+  pub fn on_cancel<Fut, F>(&self, func: F)
+    where Fut: IntoFuture<Item=T, Error=()> + 'static,
+          F: FnOnce() -> Fut + 'static
+  {
     let mut cancel_guard = self.on_cancel.write();
     let cancel_ref = cancel_guard.deref_mut();
 
@@ -138,6 +225,14 @@ impl<T: Send + 'static> PartialEq for Wombo<T> {
 }
 
 impl<T: Send + 'static> Eq for Wombo<T> {}
+
+impl<T: Send + 'static> Hash for Wombo<T> {
+
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.id.hash(state);
+  }
+
+}
 
 impl<T: Send + 'static> Wombo<T> {
 

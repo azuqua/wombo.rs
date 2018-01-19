@@ -32,6 +32,7 @@ impl WomboErrorKind {
 
 }
 
+/// A `Wombo` error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WomboError {
   kind: WomboErrorKind,
