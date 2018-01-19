@@ -19,7 +19,7 @@ cargo add wombo
 ## Features
 
 * Less boilerplate spawning event loop threads.
-* Cancel event loops, with the ability to clean up resources on the event loop first.
+* Cancel event loops, with an interface to clean up resources on the event loop first.
 * Receive notifications when event loop threads exit, with arbitrary data.
 
 ## Usage
