@@ -4,6 +4,7 @@ extern crate futures;
 extern crate tokio_core;
 extern crate thread_id;
 extern crate parking_lot;
+extern crate uuid;
 
 #[cfg(test)]
 extern crate tokio_timer;
@@ -22,7 +23,8 @@ use std::fmt;
 
 use futures::{
   Future,
-  lazy
+  lazy,
+  IntoFuture
 };
 use futures::sync::oneshot::{
   Receiver as OneshotReceiver,
@@ -59,6 +61,18 @@ pub struct ThreadOptions {
   pub stack_size: Option<usize>
 }
 
+impl ThreadOptions {
+
+  pub fn new<S: Into<String>>(name: S, stack_size: Option<usize>) -> ThreadOptions {
+    ThreadOptions {
+      name: name.into(),
+      stack_size
+    }
+  }
+
+}
+
+
 pub struct Hooks<T: Send + 'static>  {
   /// A function that runs when the event loop is canceled via the `cancel` function, but before it is interrupted.
   on_cancel: Arc<RwLock<Option<CancelHookFt<T>>>>
@@ -81,7 +95,7 @@ impl<T: Send + 'static> Hooks<T> {
   }
 
   /// Register a function to be called on the event loop when `cancel` is called.
-  pub fn on_cancel<F: FnOnce() -> Box<Future<Item=T, Error=()>> + 'static>(&self, func: F) {
+  pub fn on_cancel<Fut: IntoFuture<Item=T, Error=()> + 'static, F: FnOnce() -> Fut + 'static>(&self, func: F) {
     let mut cancel_guard = self.on_cancel.write();
     let cancel_ref = cancel_guard.deref_mut();
 
@@ -101,6 +115,7 @@ impl<T: Send + 'static> Hooks<T> {
 /// Any cloned instances will refer to the same child thread and event loop.
 #[derive(Clone)]
 pub struct Wombo<T: Send + 'static> {
+  id: Arc<String>,
   core_thread_id: Arc<RwLock<Option<usize>>>,
   cancel_tx: Arc<RwLock<Option<CancelSender>>>,
   exit_tx: Arc<RwLock<Option<ExitSender<T>>>>
@@ -114,11 +129,22 @@ impl<T: Send + 'static> fmt::Debug for Wombo<T> {
 
 }
 
+impl<T: Send + 'static> PartialEq for Wombo<T> {
+
+  fn eq(&self, other: &Wombo<T>) -> bool {
+    self.id() == other.id()
+  }
+
+}
+
+impl<T: Send + 'static> Eq for Wombo<T> {}
+
 impl<T: Send + 'static> Wombo<T> {
 
   /// Create a new `Wombo` instance without initializing the event loop thread.
   pub fn new() -> Wombo<T> {
     Wombo {
+      id: Arc::new(utils::uuid_v4()),
       core_thread_id: Arc::new(RwLock::new(None)),
       cancel_tx: Arc::new(RwLock::new(None)),
       exit_tx: Arc::new(RwLock::new(None))
@@ -133,8 +159,9 @@ impl<T: Send + 'static> Wombo<T> {
   /// # Panics
   ///
   /// Panics if `Core::new()` returns an error creating the event loop on the child thread.
-  pub fn spawn<F>(&self, mut options: ThreadOptions, func: F) -> Result<(), WomboError>
-    where F: FnOnce(&Handle, Hooks<T>) -> Box<Future<Item=T, Error=()>> + Send + 'static
+  pub fn spawn<Fut, F>(&self, mut options: ThreadOptions, func: F) -> Result<(), WomboError>
+    where Fut: IntoFuture<Item=T, Error=()> + Send + 'static,
+          F: FnOnce(&Handle, Hooks<T>) -> Fut + Send + 'static
   {
     let _ = utils::check_not_initialized(&self.core_thread_id)?;
 
@@ -161,8 +188,9 @@ impl<T: Send + 'static> Wombo<T> {
       let handle = core.handle();
 
       let hooks = Hooks::new();
-      let user_ft = func(&handle, hooks.clone());
       let on_cancel = hooks.cancel_ref().clone();
+
+      let user_ft = Box::new(func(&handle, hooks.clone()).into_future());
 
       let (interrupt_tx, user_ft) = utils::interruptible_future(user_ft, on_cancel);
       utils::set_cancel_tx(&_cancel_tx, interrupt_tx);
@@ -174,6 +202,8 @@ impl<T: Send + 'static> Wombo<T> {
           None
         }
       };
+      trace!("Event loop thread exiting...");
+
       utils::clear_thread_id(&_core_thread_id);
 
       if let Some(exit_tx) = utils::take_exit_tx(&_exit_tx) {
@@ -183,6 +213,16 @@ impl<T: Send + 'static> Wombo<T> {
     })?;
 
     Ok(())
+  }
+
+  /// Read the ID for this `Wombo` instance. This will not change if the backing thread exits or restarts.
+  pub fn id(&self) -> &Arc<String> {
+    &self.id
+  }
+
+  /// Read the thread ID of the event loop thread.
+  pub fn core_thread_id(&self) -> Option<usize> {
+    utils::get_thread_id(&self.core_thread_id)
   }
 
   /// Whether or not the event loop thread is running.
@@ -237,6 +277,8 @@ impl<T: Send + 'static> Wombo<T> {
 #[cfg(test)]
 mod tests {
   #![allow(unused_imports)]
+  #![allow(dead_code)]
+  #![allow(unused_variables)]
 
   use tokio_core::reactor::{
     Core,
@@ -246,14 +288,147 @@ mod tests {
   use super::*;
   use tokio_timer::Timer;
   use std::time::Duration;
+  use std::thread;
 
+  fn fake_timer_ft(timer: &Timer, dur: u64, c: usize) -> Box<Future<Item=usize, Error=()>> {
+    let dur = Duration::from_millis(dur);
 
+    Box::new(timer.sleep(dur).map_err(|_| ()).and_then(move |_| Ok(c)))
+  }
 
+  fn sleep_ms(dur: u64) {
+    thread::sleep(Duration::from_millis(dur));
+  }
 
+  #[test]
+  fn should_create_empty_wombo() {
+    let _ = pretty_env_logger::init();
 
+    let wombo = Wombo::<usize>::new();
+    assert!(!wombo.is_running());
+  }
 
+  #[test]
+  fn should_read_wombo_metadata() {
+    let wombo = Wombo::<usize>::new();
 
+    assert!(wombo.id().len() > 0);
+    assert!(wombo.core_thread_id().is_none());
+    assert!(!wombo.is_running());
+  }
 
+  #[test]
+  fn should_error_uninitialized_cancel() {
+    let wombo = Wombo::<usize>::new();
+    let res = wombo.cancel();
 
+    assert!(res.is_err());
+  }
+
+  #[test]
+  fn should_error_uninitialized_exit() {
+    let wombo = Wombo::<usize>::new();
+    let res = wombo.on_exit();
+
+    assert!(res.is_err());
+  }
+
+  #[test]
+  fn should_spawn_simple_timer_event_loop() {
+    let wombo = Wombo::<usize>::new();
+    let timer = Timer::default();
+    let dur = Duration::from_millis(1000);
+
+    let options = ThreadOptions::new("wombo-loop-1", None);
+    let spawn_result = wombo.spawn(options, move |handle, hooks| {
+      Box::new(timer.sleep(dur)
+        .map_err(|_| ())
+        .and_then(|_| Ok(1)))
+    });
+
+    if let Err(e) = spawn_result {
+      panic!("Error spawning thread: {:?}", e);
+    }
+
+    sleep_ms(50);
+    assert!(wombo.is_running());
+    assert!(wombo.core_thread_id().is_some());
+
+    let rx = match wombo.on_exit() {
+      Ok(rx) => rx,
+      Err(e) => panic!("Error calling on_exit: {:?}", e)
+    };
+
+    let res = rx.wait().unwrap();
+    assert_eq!(res, Some(1));
+  }
+
+  #[test]
+  fn should_spawn_timer_event_loop_with_cancel() {
+    let wombo = Wombo::<usize>::new();
+    let timer = Timer::default();
+    let dur = Duration::from_millis(1000);
+
+    let options = ThreadOptions::new("wombo-loop-2", None);
+    let spawn_result = wombo.spawn(options, move |handle, hooks| {
+      hooks.on_cancel(|| Ok(2));
+
+      Box::new(timer.sleep(dur)
+        .map_err(|_| ())
+        .and_then(|_| Ok(1)))
+    });
+
+    if let Err(e) = spawn_result {
+      panic!("Error spawning thread: {:?}", e);
+    }
+
+    sleep_ms(50);
+    assert!(wombo.is_running());
+    assert!(wombo.core_thread_id().is_some());
+
+    let rx = match wombo.on_exit() {
+      Ok(rx) => rx,
+      Err(e) => panic!("Error calling on_exit: {:?}", e)
+    };
+
+    if let Err(e) = wombo.cancel() {
+      panic!("Error canceling wombo: {:?}", e);
+    }
+
+    let res = rx.wait().unwrap();
+    assert_eq!(res, Some(2));
+  }
+
+  #[test]
+  fn should_spawn_timer_event_loop_without_cancel() {
+    let wombo = Wombo::<usize>::new();
+    let timer = Timer::default();
+    let dur = Duration::from_millis(1000);
+
+    let options = ThreadOptions::new("wombo-loop-3", None);
+    let spawn_result = wombo.spawn(options, move |handle, hooks| {
+      hooks.on_cancel(|| Ok(2));
+
+      Box::new(timer.sleep(dur)
+        .map_err(|_| ())
+        .and_then(|_| Ok(1)))
+    });
+
+    if let Err(e) = spawn_result {
+      panic!("Error spawning thread: {:?}", e);
+    }
+
+    sleep_ms(50);
+    assert!(wombo.is_running());
+    assert!(wombo.core_thread_id().is_some());
+
+    let rx = match wombo.on_exit() {
+      Ok(rx) => rx,
+      Err(e) => panic!("Error calling on_exit: {:?}", e)
+    };
+
+    let res = rx.wait().unwrap();
+    assert_eq!(res, Some(1));
+  }
 
 }

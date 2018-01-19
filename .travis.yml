@@ -11,6 +11,10 @@ addons:
     packages:
     - binutils-dev
     - build-essential
+    - libssl-dev
+    - pkg-config
+    - cmake
+    - zlib1g-dev
 cache:
   apt: true
   directories:

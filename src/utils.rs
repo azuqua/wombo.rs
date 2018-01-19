@@ -21,8 +21,11 @@ use std::ops::{
   Deref,
   DerefMut
 };
+use super::CancelHookFt;
 
 use thread_id;
+
+use uuid::Uuid;
 
 /// Sends a cancel message to the event loop thread.
 pub type CancelSender = UnboundedSender<bool>;
@@ -31,14 +34,16 @@ pub type ExitSender<T: Send + 'static> = OneshotSender<Option<T>>;
 /// Sender used to interrupt a future.
 pub type InterruptSender = UnboundedSender<bool>;
 
-use super::CancelHookFt;
-
 pub fn future_error<T: 'static, E: 'static>(err: E) -> Box<Future<Item=T, Error=E>> {
   Box::new(future::err(err))
 }
 
 pub fn future_ok<T: 'static, E: 'static>(d: T) -> Box<Future<Item=T, Error=E>> {
   Box::new(future::ok(d))
+}
+
+pub fn uuid_v4() -> String {
+  Uuid::new_v4().hyphenated().to_string()
 }
 
 /// Take a future and return a new future and a sender that can interrupt the future with a Canceled error.
@@ -117,6 +122,11 @@ pub fn check_not_initialized(id: &Arc<RwLock<Option<usize>>>) -> Result<(), Womb
       WomboErrorKind::NotInitialized, "Wombo already initialized."
     ))
   }
+}
+
+pub fn get_thread_id(id: &Arc<RwLock<Option<usize>>>) -> Option<usize> {
+  let id_guard = id.read();
+  id_guard.deref().clone()
 }
 
 pub fn set_thread_id(id: &Arc<RwLock<Option<usize>>>) {
