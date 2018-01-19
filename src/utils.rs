@@ -11,8 +11,7 @@ use futures::sync::mpsc::{
   unbounded as unbounded_channel
 };
 use futures::sync::oneshot::{
-  Sender as OneshotSender,
-  channel as oneshot_channel
+  Sender as OneshotSender
 };
 
 use std::sync::Arc;
@@ -63,7 +62,7 @@ pub fn interruptible_future<T: Send + 'static>(ft: Box<Future<Item=T, Error=()>>
         Some(b) => b,
         None => false
       },
-      Err(e) => return future_ok(None)
+      Err(_) => return future_ok(None)
     };
 
     if was_canceled {
@@ -76,7 +75,7 @@ pub fn interruptible_future<T: Send + 'static>(ft: Box<Future<Item=T, Error=()>>
         Box::new(ft.then(|result| {
           match result {
             Ok(t) => future_error(Some(t)),
-            Err(e) => future_error(None)
+            Err(_) => future_error(None)
           }
         }))
       }else{
@@ -122,19 +121,19 @@ pub fn check_not_initialized(id: &Arc<RwLock<Option<usize>>>) -> Result<(), Womb
 
 pub fn set_thread_id(id: &Arc<RwLock<Option<usize>>>) {
   let mut id_guard = id.write();
-  let mut id_ref = id_guard.deref_mut();
+  let id_ref = id_guard.deref_mut();
   *id_ref = Some(thread_id::get());
 }
 
 pub fn clear_thread_id(id: &Arc<RwLock<Option<usize>>>) {
   let mut id_guard = id.write();
-  let mut id_ref = id_guard.deref_mut();
+  let id_ref = id_guard.deref_mut();
   *id_ref = None;
 }
 
 pub fn set_cancel_tx(cancel_tx: &Arc<RwLock<Option<CancelSender>>>, tx: CancelSender) {
   let mut cancel_tx_guard = cancel_tx.write();
-  let mut cancel_tx_ref = cancel_tx_guard.deref_mut();
+  let cancel_tx_ref = cancel_tx_guard.deref_mut();
   *cancel_tx_ref = Some(tx);
 }
 
@@ -145,7 +144,7 @@ pub fn take_cancel_tx(cancel_tx: &Arc<RwLock<Option<CancelSender>>>) -> Option<C
 
 pub fn set_exit_tx<T: Send + 'static>(exit_tx: &Arc<RwLock<Option<ExitSender<T>>>>, tx: ExitSender<T>) {
   let mut exit_tx_guard = exit_tx.write();
-  let mut exit_tx_ref = exit_tx_guard.deref_mut();
+  let exit_tx_ref = exit_tx_guard.deref_mut();
   *exit_tx_ref = Some(tx);
 }
 

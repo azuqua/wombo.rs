@@ -19,16 +19,9 @@ use std::fmt;
 
 use futures::{
   Future,
-  Stream,
   lazy
 };
-use futures::sync::mpsc::{
-  UnboundedSender,
-  UnboundedReceiver,
-  unbounded as unbounded_channel
-};
 use futures::sync::oneshot::{
-  Sender as OneshotSender,
   Receiver as OneshotReceiver,
   channel as oneshot_channel
 };
@@ -46,23 +39,12 @@ use std::ops::{
   DerefMut
 };
 
-use std::thread::{
-  Builder,
-  JoinHandle
-};
+use std::thread::Builder;
 
 use utils::{
   CancelSender,
   ExitSender,
-  InterruptSender
 };
-
-macro_rules! fry {
-  ($expr:expr) => (match $expr {
-    Ok(val) => val,
-    Err(err) => return utils::future_error(err.into())
-  })
-}
 
 #[doc(hidden)]
 pub type CancelHookFt<T: Send + 'static> = Box<Future<Item=T, Error=()>>;
@@ -98,18 +80,10 @@ impl<T: Send + 'static> Hooks<T> {
   /// Register a function to be called on the event loop when `cancel` is called.
   pub fn on_cancel<F: FnOnce() -> Box<Future<Item=T, Error=()>> + 'static>(&self, func: F) {
     let mut cancel_guard = self.on_cancel.write();
-    let mut cancel_ref = cancel_guard.deref_mut();
+    let cancel_ref = cancel_guard.deref_mut();
 
     let ft = Box::new(lazy(func));
     *cancel_ref = Some(ft);
-  }
-
-  #[doc(hidden)]
-  pub fn take_cancel(&self) -> Option<CancelHookFt<T>> {
-    let mut cancel_guard = self.on_cancel.write();
-    let mut cancel_ref = cancel_guard.deref_mut();
-
-    cancel_ref.take()
   }
 
   #[doc(hidden)]
@@ -178,7 +152,7 @@ impl<T: Send + 'static> Wombo<T> {
       utils::set_thread_id(&_core_thread_id);
 
       let mut core = match Core::new() {
-        Ok(mut c) => c,
+        Ok(c) => c,
         Err(e) => panic!("Error creating event loop: {:?}", e)
       };
       let handle = core.handle();
@@ -208,6 +182,12 @@ impl<T: Send + 'static> Wombo<T> {
     Ok(())
   }
 
+  /// Whether or not the event loop thread is running.
+  pub fn is_running(&self) -> bool {
+    let id_guard = self.core_thread_id.read();
+    id_guard.deref().is_some()
+  }
+
   /// Send a message to cancel the event loop thread, interrupting any futures running there.
   ///
   /// This first triggers the callback from `on_cancel`, if defined, then interrupts the event loop
@@ -216,25 +196,40 @@ impl<T: Send + 'static> Wombo<T> {
   pub fn cancel(&self) -> Result<(), WomboError> {
     let _ = utils::check_initialized(&self.core_thread_id)?;
 
-    unimplemented!()
+    let tx = match utils::take_cancel_tx(&self.cancel_tx) {
+      Some(tx) => tx,
+      None => return Err(WomboError::new(
+        WomboErrorKind::NotInitialized, "Cancel sender not initialized."
+      ))
+    };
+
+    match tx.unbounded_send(true){
+      Ok(_) => Ok(()),
+      Err(_) => Err(WomboError::new(
+        WomboErrorKind::Unknown, "Error sending cancel command."
+      ))
+    }
   }
 
   /// Returns a oneshot receiver that resolves when the thread exits for any reason, either via the `cancel` command, or otherwise.
   ///
-  /// If the caller has registered a `before_cancel` callback then this will resolve with `Some` data, otherwise it resolves with `None`.
+  /// Upon calling cancel if the caller has registered an `on_cancel` callback then the receiver returned here will resolve with `Some` data,
+  /// otherwise it resolves with `None` if no `on_cancel` callback exists.
+  ///
+  /// If the future returned by `func` in `spawn` resolves before `cancel` is called that data will be sent to the receiver returned here.
   ///
   /// If this is called more than once the previous oneshot channel will be canceled.
   pub fn on_exit(&self) -> Result<OneshotReceiver<Option<T>>, WomboError> {
-    // set exit tx inner
+    let _ = utils::check_initialized(&self.core_thread_id)?;
 
-    unimplemented!()
+    let (tx, rx) = oneshot_channel();
+    utils::set_exit_tx(&self.exit_tx, tx);
+    Ok(rx)
   }
 
   // TODO add spawn_catch, which enforces UnwindSafe and uses catch_unwind
 
 }
-
-
 
 #[cfg(test)]
 mod tests {
