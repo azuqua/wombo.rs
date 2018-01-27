@@ -129,10 +129,14 @@ pub fn get_thread_id(id: &Arc<RwLock<Option<usize>>>) -> Option<usize> {
   id_guard.deref().clone()
 }
 
-pub fn set_thread_id(id: &Arc<RwLock<Option<usize>>>) {
+pub fn set_thread_id(id: &Arc<RwLock<Option<usize>>>) -> usize {
+  let t_id = thread_id::get();
+
   let mut id_guard = id.write();
   let id_ref = id_guard.deref_mut();
-  *id_ref = Some(thread_id::get());
+  *id_ref = Some(t_id);
+
+  t_id
 }
 
 pub fn clear_thread_id(id: &Arc<RwLock<Option<usize>>>) {

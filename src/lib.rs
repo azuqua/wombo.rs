@@ -158,6 +158,8 @@ impl ThreadOptions {
 
 /// A struct for receiving notifications when the event loop is canceled.
 pub struct Hooks<T: Send + 'static>  {
+  /// The thread ID of the event loop.
+  thread_id: usize,
   /// A function that runs when the event loop is canceled via the `cancel` function, but before it is interrupted.
   on_cancel: Arc<RwLock<Option<CancelHookFt<T>>>>
 
@@ -166,16 +168,25 @@ pub struct Hooks<T: Send + 'static>  {
 
 impl<T: Send + 'static> Clone for Hooks<T> {
   fn clone(&self) -> Self {
-    Hooks { on_cancel: self.on_cancel.clone() }
+    Hooks {
+      on_cancel: self.on_cancel.clone(),
+      thread_id: self.thread_id
+    }
   }
 }
 
 impl<T: Send + 'static> Hooks<T> {
 
-  pub fn new() -> Hooks<T> {
+  pub fn new(id: usize) -> Hooks<T> {
     Hooks {
-      on_cancel: Arc::new(RwLock::new(None))
+      on_cancel: Arc::new(RwLock::new(None)),
+      thread_id: id
     }
+  }
+
+  /// The thread ID of the event loop thread.
+  pub fn thread_id(&self) -> usize {
+    self.thread_id
   }
 
   /// Register a function to be called on the event loop when `cancel` is called.
@@ -274,7 +285,7 @@ impl<T: Send + 'static> Wombo<T> {
     );
 
     let _ = builder.spawn(move || {
-      utils::set_thread_id(&_core_thread_id);
+      let t_id = utils::set_thread_id(&_core_thread_id);
 
       let mut core = match Core::new() {
         Ok(c) => c,
@@ -282,15 +293,22 @@ impl<T: Send + 'static> Wombo<T> {
       };
       let handle = core.handle();
 
-      let hooks = Hooks::new();
+      let hooks = Hooks::new(t_id);
       let on_cancel = hooks.cancel_ref().clone();
 
-      let user_ft = Box::new(func(&handle, hooks.clone()).into_future());
+      let cancel_tx = _cancel_tx.clone();
+      let outer_ft = lazy(move || {
+        trace!("Running user future on event loop.");
 
-      let (interrupt_tx, user_ft) = utils::interruptible_future(user_ft, on_cancel);
-      utils::set_cancel_tx(&_cancel_tx, interrupt_tx);
+        let user_ft = Box::new(func(&handle, hooks.clone()).into_future());
 
-      let res = match core.run(user_ft) {
+        let (interrupt_tx, user_ft) = utils::interruptible_future(user_ft, on_cancel);
+        utils::set_cancel_tx(&cancel_tx, interrupt_tx);
+
+        user_ft
+      });
+
+      let res = match core.run(outer_ft) {
         Ok(t) => t,
         Err(e) => {
           error!("Error with event loop thread: {:?}", e);
