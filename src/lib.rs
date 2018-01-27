@@ -255,7 +255,7 @@ impl<T: Send + 'static> Wombo<T> {
   ///
   /// Panics if `Core::new()` returns an error creating the event loop on the child thread.
   pub fn spawn<Fut, F>(&self, mut options: ThreadOptions, func: F) -> Result<(), WomboError>
-    where Fut: IntoFuture<Item=T, Error=()> + Send + 'static,
+    where Fut: IntoFuture<Item=T, Error=()> + 'static,
           F: FnOnce(&Handle, Hooks<T>) -> Fut + Send + 'static
   {
     let _ = utils::check_not_initialized(&self.core_thread_id)?;
