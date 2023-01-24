@@ -13,7 +13,7 @@
 //! use futures::Future;
 //! use tokio_timer::Timer;
 //!
-//! use std::thread;
+//! use std::thread; 
 //! use std::time::Duration;
 //!
 //! use wombo::*;
@@ -133,7 +133,7 @@ use utils::{
 };
 
 #[doc(hidden)]
-pub type CancelHookFt<T: Send + 'static> = Box<Future<Item=T, Error=()>>;
+pub type CancelHookFt<T> = Box<dyn Future<Item=T, Error=()>>;
 
 /// Options when spawning an event loop thread.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -403,7 +403,7 @@ mod tests {
   use std::time::Duration;
   use std::thread;
 
-  fn fake_timer_ft(timer: &Timer, dur: u64, c: usize) -> Box<Future<Item=usize, Error=()>> {
+  fn fake_timer_ft(timer: &Timer, dur: u64, c: usize) -> Box<dyn Future<Item=usize, Error=()>> {
     let dur = Duration::from_millis(dur);
 
     Box::new(timer.sleep(dur).map_err(|_| ()).and_then(move |_| Ok(c)))
