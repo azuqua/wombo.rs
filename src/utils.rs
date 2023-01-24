@@ -30,15 +30,15 @@ use uuid::Uuid;
 /// Sends a cancel message to the event loop thread.
 pub type CancelSender = UnboundedSender<bool>;
 /// Sends an exit message from the event loop thread.
-pub type ExitSender<T: Send + 'static> = OneshotSender<Option<T>>;
+pub type ExitSender<T> = OneshotSender<Option<T>>;
 /// Sender used to interrupt a future.
 pub type InterruptSender = UnboundedSender<bool>;
 
-pub fn future_error<T: 'static, E: 'static>(err: E) -> Box<Future<Item=T, Error=E>> {
+pub fn future_error<T: 'static, E: 'static>(err: E) -> Box<dyn Future<Item=T, Error=E>> {
   Box::new(future::err(err))
 }
 
-pub fn future_ok<T: 'static, E: 'static>(d: T) -> Box<Future<Item=T, Error=E>> {
+pub fn future_ok<T: 'static, E: 'static>(d: T) -> Box<dyn Future<Item=T, Error=E>> {
   Box::new(future::ok(d))
 }
 
@@ -47,8 +47,8 @@ pub fn uuid_v4() -> String {
 }
 
 /// Take a future and return a new future and a sender that can interrupt the future with a Canceled error.
-pub fn interruptible_future<T: Send + 'static>(ft: Box<Future<Item=T, Error=()>>, on_cancel: Arc<RwLock<Option<CancelHookFt<T>>>>)
-  -> (InterruptSender, Box<Future<Item=Option<T>, Error=()>>)
+pub fn interruptible_future<T: Send + 'static>(ft: Box<dyn Future<Item=T, Error=()>>, on_cancel: Arc<RwLock<Option<CancelHookFt<T>>>>)
+  -> (InterruptSender, Box<dyn Future<Item=Option<T>, Error=()>>)
 {
   let (tx, rx) = unbounded_channel();
   let out_tx = tx.clone();
@@ -181,7 +181,7 @@ mod tests {
   use tokio_timer::Timer;
   use std::time::Duration;
 
-  fn fake_callback_ft<T: 'static>(result: T) -> Box<Future<Item=T, Error=()>> {
+  fn fake_callback_ft<T: 'static>(result: T) -> Box<dyn Future<Item=T, Error=()>> {
     Box::new(future::ok::<T, ()>(result))
   }
 
