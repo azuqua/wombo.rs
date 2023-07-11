@@ -1,22 +1,11 @@
 [package]
 authors = ["Alec Embke <aembke@gmail.com>"]
 description = "Utilities for managing event loop threads."
-homepage = "https://github.com/azuqua/wombo.rs"
 keywords = ["thread", "tokio", "futures", "cancel", "utilities"]
 license = "MIT"
 name = "wombo"
 readme = "README.md"
-repository = "https://github.com/azuqua/wombo.rs"
 version = "0.1.2"
-
-[badges]
-
-[badges.maintenance]
-status = "actively-developed"
-
-[badges.travis-ci]
-branch = "master"
-repository = "azuqua/wombo.rs"
 
 [dependencies]
 futures = "0.1.17"
